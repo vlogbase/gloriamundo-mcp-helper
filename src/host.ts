@@ -4,6 +4,7 @@ import express from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import { config } from 'dotenv';
+import { z } from 'zod';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import fs from 'fs';
@@ -139,8 +140,17 @@ app.post('/mcp/call/:clientId', async (req: Request, res: Response) => {
         );
       });
 
+    // Provide a permissive schema: any object shape is accepted.
+    const resultSchema = z.object({}).passthrough();
+
+    // New call: request + schema (+ optional options if your SDK supports them).
+    // If your SDK version doesn't take a third argument, remove the options object.
     const result = await withTimeout(
-      client.request({ method, params } as any),
+      client.request(
+        { method, params } as any,
+        resultSchema
+        // , { timeout: 30_000 } // uncomment only if your SDK version supports RequestOptions
+      ),
       30000
     );
     res.json({ success: true, result });
