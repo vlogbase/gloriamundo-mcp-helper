@@ -1,85 +1,55 @@
 
+
 import express from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import { config } from 'dotenv';
-import fs from 'fs';
-import path from 'path';
-import os from 'os';
-import crypto from 'crypto';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import fs from 'fs';
+import path from 'path';
+import {
+  getConfigPath,
+  resolveAllowedOrigins,
+  resolveToken,
+} from './config';
 
 // Load environment variables
 config();
 
 const app = express();
 const port = Number(process.env.MCP_HOST_PORT) || 9000;
-
-function getConfigPath(): string {
-  const home = os.homedir();
-  if (process.platform === 'darwin') {
-    return path.join(home, 'Library', 'Application Support', 'GloriaMundo', 'config.json');
-  }
-  if (process.platform === 'win32') {
-    const appData = process.env.APPDATA || path.join(home, 'AppData', 'Roaming');
-    return path.join(appData, 'GloriaMundo', 'config.json');
-  }
-  return path.join(home, '.gloriamundo-mcp', 'config.json');
-}
-
-const configPath = getConfigPath();
-let token = process.env.MCP_HOST_TOKEN;
-if (!token) {
-  if (fs.existsSync(configPath)) {
-    try {
-      const data = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-      if (data.token) {
-        token = data.token;
-      }
-    } catch {
-      // ignore parse errors
-    }
-  }
-  if (!token) {
-    token = crypto.randomBytes(32).toString('hex');
-    fs.mkdirSync(path.dirname(configPath), { recursive: true });
-    fs.writeFileSync(
-      configPath,
-      JSON.stringify({ token, createdAt: new Date().toISOString() }, null, 2)
-    );
-  }
-}
+const token = resolveToken();
+const allowedOrigins = resolveAllowedOrigins();
 
 const pkg = JSON.parse(
   fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf-8')
 );
 
 // Middleware
-const allowedOrigins = ['https://gloriamundo.com'];
+const corsOptions = {
+  origin: (
+    origin: string | undefined,
+    callback: (err: Error | null, allow?: boolean) => void
+  ) => {
+    if (
+      !origin ||
+      allowedOrigins.includes(origin) ||
+      /^https?:\/\/localhost(?::\d+)?$/.test(origin) ||
+      /^https?:\/\/127\.0\.0\.1(?::\d+)?$/.test(origin)
+    ) {
+      return callback(null, true);
+    }
+    return callback(new Error('Not allowed by CORS'));
+  },
+};
 
-app.use(
-  cors({
-    origin: (
-      origin: string | undefined,
-      callback: (err: Error | null, allow?: boolean) => void
-    ) => {
-      if (
-        !origin ||
-        allowedOrigins.includes(origin) ||
-        origin.startsWith('http://localhost:') ||
-        origin.startsWith('http://127.0.0.1:')
-      ) {
-        return callback(null, true);
-      }
-      return callback(new Error('Not allowed by CORS'));
-    },
-  })
-);
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 app.use(express.json());
 
 app.use((req: Request, res: Response, next: NextFunction) => {
-  if (req.path === '/health') return next();
+  if (req.path === '/health' || req.path === '/config/public') return next();
   const auth = req.headers['authorization'];
   if (!auth || !auth.startsWith('Bearer ') || auth.slice(7) !== token) {
     return res.status(401).json({ error: 'Unauthorized' });
@@ -117,6 +87,10 @@ async function initializeMCPClient(serverPath: string, serverArgs: string[] = []
 // Routes
 app.get('/health', (req: Request, res: Response) => {
   res.json({ ok: true, version: pkg.version, uptime: process.uptime() });
+});
+
+app.get('/config/public', (req: Request, res: Response) => {
+  res.json({ token, allowedOrigins, configPath: getConfigPath() });
 });
 
 app.post('/mcp/connect', async (req: Request, res: Response) => {
@@ -230,3 +204,4 @@ app.listen(port, '0.0.0.0', () => {
     `MCP token (copy into Account → MCP Host Token): ${token}`
   );
 });
+
