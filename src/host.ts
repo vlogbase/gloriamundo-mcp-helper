@@ -121,7 +121,28 @@ app.post('/mcp/call/:clientId', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'MCP client not found' });
     }
 
-    const result = await client.request({ method, params }, { timeout: 30000 });
+    // Version-agnostic timeout wrapper. Some SDK versions don't accept an options arg.
+    const withTimeout = <T>(p: Promise<T>, ms: number): Promise<T> =>
+      new Promise<T>((resolve, reject) => {
+        const id = setTimeout(() => {
+          reject(new Error(`MCP request timed out after ${ms}ms`));
+        }, ms);
+        p.then(
+          (val) => {
+            clearTimeout(id);
+            resolve(val);
+          },
+          (err) => {
+            clearTimeout(id);
+            reject(err);
+          }
+        );
+      });
+
+    const result = await withTimeout(
+      client.request({ method, params } as any),
+      30000
+    );
     res.json({ success: true, result });
   } catch (error) {
     console.error('MCP call failed:', error);
