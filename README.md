@@ -1,13 +1,21 @@
 
 # GloriaMundo MCP Host
 
-## Quick start
+A desktop application that runs locally to provide the infrastructure for Model Context Protocol (MCP) tools to interact with GloriaMundo.
 
-Requires Node 18+
+## Features
+
+- Host web server that accepts connections from GloriaMundo
+- MCP tool execution and communication
+- Token-based authentication
+- CORS support
+
+## Quick Start
 
 ```bash
-pnpm install  # or npm install
-pnpm dev      # or npm run dev
+npm ci
+npm run build
+npm start
 ```
 
 The server logs the host URL and the generated MCP token on startup.
@@ -37,3 +45,38 @@ curl http://localhost:9000/health
 curl http://localhost:9000/config/public
 curl -H "Authorization: Bearer <TOKEN>" http://localhost:9000/mcp/tools/<id>
 ```
+
+## Building stand-alone binaries
+
+Requirements: Node 20+ on the build machine.
+
+```bash
+cd desktop/host
+npm ci
+npm run pkg:all
+```
+
+Binaries will appear under `desktop/host/dist/pkg/`:
+
+* `gm-mcp-host-linux-x64`
+* `gm-mcp-host-macos-x64`
+* `gm-mcp-host-macos-arm64`
+* `gm-mcp-host-win-x64.exe`
+
+### Running locally
+
+```bash
+./dist/pkg/gm-mcp-host-linux-x64
+# or on macOS:
+./dist/pkg/gm-mcp-host-macos-arm64
+# on Windows:
+dist\\pkg\\gm-mcp-host-win-x64.exe
+```
+
+Default port: 9101 (configurable via env). You can validate the build with:
+
+```bash
+../../scripts/self_test_helper.sh
+```
+
+> Note: binaries are unsigned; macOS users may need to right-click → Open.

@@ -1,12 +1,18 @@
+
 {
   "name": "gm-mcp-host",
   "version": "0.1.0",
   "description": "GloriaMundo MCP Host",
   "main": "dist/host.js",
+  "bin": "dist/host.js",
   "scripts": {
     "build": "tsc",
     "start": "node dist/host.js",
-    "dev": "tsx watch src/host.ts"
+    "dev": "tsx watch src/host.ts",
+    "pkg:all": "npm run build && pkg .",
+    "pkg:linux": "npm run build && pkg . --targets node20-linux-x64 --out-path dist/pkg",
+    "pkg:mac": "npm run build && pkg . --targets node20-macos-x64,node20-macos-arm64 --out-path dist/pkg",
+    "pkg:win": "npm run build && pkg . --targets node20-win-x64 --out-path dist/pkg"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.0",
@@ -21,6 +27,16 @@
     "@types/express": "^4.17.21",
     "@types/node": "^20.12.7",
     "tsx": "^4.7.0",
-    "typescript": "^5.4.5"
+    "typescript": "^5.4.5",
+    "pkg": "^5.8.1"
+  },
+  "pkg": {
+    "targets": [
+      "node20-linux-x64",
+      "node20-macos-x64",
+      "node20-macos-arm64",
+      "node20-win-x64"
+    ],
+    "outputPath": "dist/pkg"
   }
 }
