@@ -1,48 +1,47 @@
-# -------- BEGIN WORKFLOW --------
+# --------- BEGIN WORKFLOW ---------
 name: Build & Publish MCP Helper
 
 on:
   push:
-    tags: ['v*']          # fire only on version tags
+    tags: ['v*']          # run only on version tags (v0.2.7, v1.0.0 …)
 
 permissions:
-  contents: write         # needed by softprops/action-gh-release
+  contents: write         # create releases & upload assets
 
 jobs:
   build:
-    name: ${{ matrix.os }}-${{ matrix.arch }}
-    runs-on: ${{ matrix.runner }}
+    runs-on: ubuntu-latest
 
     strategy:
+      fail-fast: false
       matrix:
-        include:
-          # runner           os     arch   pkgTarget               ext
-          - { runner: ubuntu-latest , os: linux ,  arch: x64  , pkgTarget: node20-linux-x64   , ext: ""     }
-          - { runner: ubuntu-latest , os: linux ,  arch: arm64, pkgTarget: node20-linux-arm64 , ext: ""     }
-          - { runner: macos-latest  , os: macos , arch: x64  , pkgTarget: node20-macos-x64   , ext: ""     }
-          - { runner: macos-latest  , os: macos , arch: arm64, pkgTarget: node20-macos-arm64 , ext: ""     }
-          - { runner: windows-latest, os: win   , arch: x64  , pkgTarget: node20-win-x64    , ext: ".exe" }
+        target:
+          # pkg runtimes that actually exist today
+          - node18-linux-x64
+          - node18-macos-arm64
+          - node18-macos-x64
+          - node18-win-x64
 
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - name: Use Node 22 to build
+        uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '22'
 
-      - name: Install deps & build
+      - name: Install deps & build helper
         run: |
           npm ci
-          npm run build        # creates dist/host.js
+          npm run build         # produces dist/host.js
 
-      - name: Package binary
+      - name: Package binary (Node 18 runtime)
         run: |
           npx pkg dist/host.js \
-            --targets ${{ matrix.pkgTarget }} \
-            --output dist/pkg/gm-mcp-host-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}
+            --targets ${{ matrix.target }} \
+            --output  dist/pkg/gm-mcp-host-${{ matrix.target }}
 
-      - name: Upload binary
+      - name: Upload binary to release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/pkg/gm-mcp-host-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}
-# -------- END WORKFLOW --------
+          files: dist/pkg/gm-mcp-host-${{ matrix.target }}
