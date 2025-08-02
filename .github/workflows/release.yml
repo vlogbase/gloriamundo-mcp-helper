@@ -11,15 +11,19 @@ permissions:
 jobs:
   build:
     name: build (${{ matrix.target }})
-    runs-on: ubuntu-latest        # pkg can cross-compile on Linux
     strategy:
       fail-fast: false
       matrix:
-        target:
-          - node18-linux-x64
-          - node18-macos-arm64
-          - node18-macos-x64
-          - node18-win-x64
+        include:
+          - os: ubuntu-latest
+            target: node18-linux-x64
+          - os: macos-14
+            target: node18-macos-arm64
+          - os: macos-14
+            target: node18-macos-x64
+          - os: windows-latest
+            target: node18-win-x64
+    runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v4
