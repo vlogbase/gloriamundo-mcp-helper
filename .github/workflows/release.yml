@@ -39,10 +39,8 @@ jobs:
           npm run build          # produces dist/host.js
 
       - name: Package binary with pkg
-        run: |
-          npx pkg dist/host.js \
-            --targets ${{ matrix.target }} \
-            --output  dist/pkg/gm-mcp-host-${{ matrix.target }}
+        run: npx pkg dist/host.js --targets ${{ matrix.target }} --output dist/pkg/gm-mcp-host-${{ matrix.target }}
+
 
       - name: Upload packaged binary as artifact
         uses: actions/upload-artifact@v4
