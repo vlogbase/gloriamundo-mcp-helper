@@ -3,10 +3,10 @@ name: Build & Publish MCP Helper
 
 on:
   push:
-    tags: ['v*']          # run only on version tags (v0.2.9, v1.0.0 …)
+    tags: ['v*']
 
 permissions:
-  contents: write         # allow creating / updating releases
+  contents: write        # create / update releases
 
 jobs:
   build:
@@ -39,28 +39,27 @@ jobs:
           npm run build          # produces dist/host.js
 
       - name: Package binary with pkg
-        run: npx pkg dist/host.js --targets ${{ matrix.target }} --output dist/pkg/gm-mcp-host-${{ matrix.target }}
-
+        shell: bash             # use bash everywhere
+        run: |
+          OUT="dist/pkg/gm-mcp-host-${{ matrix.target }}${{ matrix.os == 'windows-latest' && '.exe' || '' }}"
+          npx pkg dist/host.js --targets ${{ matrix.target }} --output "$OUT"
 
       - name: Upload packaged binary as artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.target }}
-          path: dist/pkg/gm-mcp-host-${{ matrix.target }}
+          path: dist/pkg/gm-mcp-host-${{ matrix.target }}${{ matrix.os == 'windows-latest' && '.exe' || '' }}
 
   publish:
     name: Publish release
-    needs: build                # wait for *all* matrix builds
+    needs: build
     runs-on: ubuntu-latest
-
     steps:
-      - name: Download all build artifacts
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           path: ./artifacts
 
-      - name: Publish / update GitHub release
-        uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v2
         with:
           files: ./artifacts/**/gm-mcp-host-*
 # --------- END WORKFLOW ---------
