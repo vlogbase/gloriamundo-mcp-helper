@@ -1,5 +1,6 @@
 
 
+
 import express from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
@@ -19,13 +20,14 @@ import {
 config();
 
 const app = express();
-const port = Number(process.env.MCP_HOST_PORT) || 9000;
+export const PORT = Number(process.env.MCP_HOST_PORT) || 9000;
 const token = resolveToken();
 const allowedOrigins = resolveAllowedOrigins();
 
 const pkg = JSON.parse(
   fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf-8')
 );
+export const VERSION = pkg.version;
 
 // Middleware
 const corsOptions = {
@@ -87,11 +89,46 @@ async function initializeMCPClient(serverPath: string, serverArgs: string[] = []
 
 // Routes
 app.get('/health', (req: Request, res: Response) => {
-  res.json({ ok: true, version: pkg.version, uptime: process.uptime() });
+  res.json({ ok: true, version: VERSION, uptime: process.uptime() });
 });
 
 app.get('/config/public', (req: Request, res: Response) => {
   res.json({ token, allowedOrigins, configPath: getConfigPath() });
+});
+
+app.get('/v1/fs/list', (req: Request, res: Response) => {
+  const dirPath = req.query.path;
+  if (typeof dirPath !== 'string') {
+    return res.status(400).json({ error: 'path query parameter is required' });
+  }
+  try {
+    const entries = fs
+      .readdirSync(dirPath, { withFileTypes: true })
+      .map((entry) => ({ name: entry.name, isDir: entry.isDirectory() }));
+    res.json(entries);
+  } catch {
+    res.status(400).json({ error: 'Failed to read directory' });
+  }
+});
+
+app.get('/v1/fs/get', (req: Request, res: Response) => {
+  const filePath = req.query.path;
+  if (typeof filePath !== 'string') {
+    return res.status(400).json({ error: 'path query parameter is required' });
+  }
+  try {
+    const stat = fs.statSync(filePath);
+    if (stat.isDirectory()) {
+      return res.status(400).json({ error: 'Path is a directory' });
+    }
+    if (stat.size > 128 * 1024) {
+      return res.status(400).json({ error: 'File too large' });
+    }
+    const content = fs.readFileSync(filePath, 'utf-8');
+    res.type('text/plain').send(content);
+  } catch {
+    res.status(400).json({ error: 'Failed to read file' });
+  }
 });
 
 app.post('/mcp/connect', async (req: Request, res: Response) => {
@@ -229,10 +266,11 @@ process.on('SIGINT', async () => {
   process.exit(0);
 });
 
-app.listen(port, '0.0.0.0', () => {
-  console.log(`GloriaMundo MCP Host listening on http://localhost:${port}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`GloriaMundo MCP Host listening on http://localhost:${PORT}`);
   console.log(
     `MCP token (copy into Account → MCP Host Token): ${token}`
   );
 });
+
 
