@@ -3,20 +3,19 @@ name: Build & Publish MCP Helper
 
 on:
   push:
-    tags: ['v*']          # run only on version tags (v0.2.7, v1.0.0 …)
+    tags: ['v*']          # run only on version tags (v0.2.9, v1.0.0 …)
 
 permissions:
-  contents: write         # create releases & upload assets
+  contents: write         # allow creating / updating releases
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-
+    name: build (${{ matrix.target }})
+    runs-on: ubuntu-latest        # pkg can cross-compile on Linux
     strategy:
       fail-fast: false
       matrix:
         target:
-          # pkg runtimes that actually exist today
           - node18-linux-x64
           - node18-macos-arm64
           - node18-macos-x64
@@ -25,23 +24,41 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Use Node 22 to build
+      - name: Use Node 22
         uses: actions/setup-node@v4
         with:
           node-version: '22'
 
-      - name: Install deps & build helper
+      - name: Install deps & transpile
         run: |
           npm ci
-          npm run build         # produces dist/host.js
+          npm run build          # produces dist/host.js
 
-      - name: Package binary (Node 18 runtime)
+      - name: Package binary with pkg
         run: |
           npx pkg dist/host.js \
             --targets ${{ matrix.target }} \
             --output  dist/pkg/gm-mcp-host-${{ matrix.target }}
 
-      - name: Upload binary to release
+      - name: Upload packaged binary as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: dist/pkg/gm-mcp-host-${{ matrix.target }}
+
+  publish:
+    name: Publish release
+    needs: build                # wait for *all* matrix builds
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+
+      - name: Publish / update GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/pkg/gm-mcp-host-${{ matrix.target }}
+          files: ./artifacts/**/gm-mcp-host-*
+# --------- END WORKFLOW ---------
