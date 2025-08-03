@@ -37,6 +37,8 @@
       "node20-macos-arm64",
       "node20-win-x64"
     ],
-    "outputPath": "dist/pkg"
+    "outputPath": "dist/pkg",
+    "assets": ["node_modules/@modelcontextprotocol/**/*"],
+    "compression": "Brotli"
   }
 }
