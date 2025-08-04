@@ -43,7 +43,8 @@
       "node_modules/@modelcontextprotocol/sdk/client/**/*"
     ],
     "scripts": [
-      "node_modules/@modelcontextprotocol/sdk/client/**/*.js"
+      "node_modules/@modelcontextprotocol/sdk/client/**/*.js",
+      "node_modules/@modelcontextprotocol/sdk/client/**/*.mjs"
     ],
     "compression": "Brotli"
   }
