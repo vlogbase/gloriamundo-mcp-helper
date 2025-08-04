@@ -6,8 +6,8 @@ import type { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import { config } from 'dotenv';
 import { z } from 'zod';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+const sdk = require('@modelcontextprotocol/sdk');
+type Client = InstanceType<typeof sdk.Client>;
 import fs from 'fs';
 import path from 'path';
 import {
@@ -65,12 +65,12 @@ const mcpClients = new Map<string, Client>();
 
 // Initialize MCP client
 async function initializeMCPClient(serverPath: string, serverArgs: string[] = []): Promise<Client> {
-  const transport = new StdioClientTransport({
+  const transport = new sdk.StdioClientTransport({
     command: serverPath,
     args: serverArgs,
   });
 
-  const client = new Client(
+  const client = new sdk.Client(
     {
       name: "gm-mcp-host",
       version: "0.1.0",
