@@ -12,7 +12,7 @@ import path from "path";
  * which lives under sdk/client/.  This lets pkg include it without hacks.
  * ------------------------------------------------------------------------- */
 // pkg bundles relative requires best when we resolve from __dirname
-const sdk = require(path.join(__dirname, "sdk-cjs"));
+const sdk = require("./sdk-cjs");
 type Client = InstanceType<typeof sdk.Client>;
 
 import fs from "fs";
