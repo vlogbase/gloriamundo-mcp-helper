@@ -38,8 +38,10 @@
       "node20-win-x64"
     ],
     "outputPath": "dist/pkg",
-    "assets": ["node_modules/@modelcontextprotocol/**/*"],
-    "scripts": ["node_modules/@modelcontextprotocol/sdk/**/*"],
+    "assets": [
+      "node_modules/@modelcontextprotocol/**/*",
+      "node_modules/@modelcontextprotocol/sdk/client/**/*"
+    ],
     "compression": "Brotli"
   }
 }
