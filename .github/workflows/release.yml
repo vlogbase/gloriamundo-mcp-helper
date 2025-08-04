@@ -2,10 +2,10 @@ name: Build & Publish MCP Helper
 
 on:
   push:
-    tags: ['v*']          # run only on version tags (v0.2.22, v1.0.0 …)
+    tags: ['v*']
 
 permissions:
-  contents: write         # create / update releases
+  contents: write
 
 jobs:
   build:
@@ -35,7 +35,15 @@ jobs:
       - name: Install deps & transpile
         run: |
           npm ci
-          npm run build            # produces dist/host.js
+          npm run build                # dist/host.js
+
+      # 👉  NEW: add CommonJS shim so require('@modelcontextprotocol/sdk') works
+      - name: Add SDK root shim
+        shell: bash
+        run: |
+          cat > node_modules/@modelcontextprotocol/sdk/index.js <<'JS'
+          module.exports = require('./client/index.js');
+          JS
 
       - name: Package binary with pkg
         shell: bash
@@ -43,6 +51,7 @@ jobs:
           OUT="dist/pkg/gm-mcp-host-${{ matrix.target }}${{ matrix.os == 'windows-latest' && '.exe' || '' }}"
           npx pkg dist/host.js --targets ${{ matrix.target }} --output "$OUT"
 
+      # Windows smoke-test with log capture
       - name: Smoke test Windows binary
         if: ${{ matrix.os == 'windows-latest' }}
         shell: pwsh
@@ -55,9 +64,7 @@ jobs:
           Start-Sleep -Seconds 5
           try {
             $resp = Invoke-WebRequest -Uri http://127.0.0.1:9000/health -UseBasicParsing
-            if ($resp.StatusCode -ne 200) {
-              throw "status code $($resp.StatusCode)"
-            }
+            if ($resp.StatusCode -ne 200) { throw "status code $($resp.StatusCode)" }
           } finally {
             if (Get-Process -Id $p.Id -ErrorAction SilentlyContinue) {
               Stop-Process -Id $p.Id
@@ -68,21 +75,19 @@ jobs:
             if (Test-Path helper.err) { Get-Content helper.err }
           }
 
-      - name: Upload packaged binary as artifact
+      - name: Upload packaged binary
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.target }}
           path: dist/pkg/gm-mcp-host-${{ matrix.target }}${{ matrix.os == 'windows-latest' && '.exe' || '' }}
 
   publish:
-    name: Publish release
     needs: build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
         with:
           path: ./artifacts
-
       - uses: softprops/action-gh-release@v2
         with:
           files: ./artifacts/**/gm-mcp-host-*
