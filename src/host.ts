@@ -3,6 +3,7 @@ import type { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import { config } from 'dotenv';
 import { z } from 'zod';
+import path from 'path';      
 
 /* ------------------------------------------------------------------------- *
  * NOTE(pkg): the top-level entry of @modelcontextprotocol/sdk is pure ESM
@@ -10,7 +11,8 @@ import { z } from 'zod';
  * We therefore point Node at the CommonJS browser-friendly build instead,
  * which lives under sdk/client/.  This lets pkg include it without hacks.
  * ------------------------------------------------------------------------- */
-const sdk = require("./sdk-cjs")client');
+// pkg bundles relative requires best when we resolve from __dirname
++const sdk = require(path.join(__dirname, 'sdk-cjs'));
 type Client = InstanceType<typeof sdk.Client>;
 
 import fs from 'fs';
