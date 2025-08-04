@@ -1,8 +1,7 @@
 /**
- * CommonJS wrapper so `pkg` can bundle the MCP SDK.
- * It re-exports the helper-friendly build that actually exists on disk:
- *   node_modules/@modelcontextprotocol/sdk/dist/cjs/client/index.js
+ * CommonJS wrapper so the helper can bundle the MCP SDK.
+ * We re-export the real CJS build that lives inside dist/cjs/client/.
  */
 module.exports = require(
-  '@modelcontextprotocol/sdk/dist/cjs/client'   // ← static CJS path
+  '@modelcontextprotocol/sdk/dist/cjs/client'   // <- ends with /index.js inside the pkg
 );
