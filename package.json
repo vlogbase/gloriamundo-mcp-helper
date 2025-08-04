@@ -39,6 +39,7 @@
     ],
     "outputPath": "dist/pkg",
     "assets": ["node_modules/@modelcontextprotocol/**/*"],
+    "scripts": ["node_modules/@modelcontextprotocol/sdk/**/*"],
     "compression": "Brotli"
   }
 }
