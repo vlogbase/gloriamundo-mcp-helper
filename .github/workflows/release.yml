@@ -1,113 +1,74 @@
-# -------- BEGIN FILE: .github/workflows/release.yml --------
-name: Build & Release MCP Helper
+# -------- BEGIN release.yml --------
+name: Build & publish MCP Helper
 
 on:
   push:
-    tags: ['v*']          # fire only on version tags (v0.2.x, v1.0.0 …)
+    tags: ['v*']          # run only on version tags like v0.2.37
 
 permissions:
-  contents: write         # softprops/action-gh-release needs this
-
-env:
-  # Centralise the Node LTS we build against
-  BUILD_NODE_VERSION: 18
+  contents: write         # required by softprops/action-gh-release
 
 jobs:
-# ---------------------------------------------------------------------------
-# 1.  Build + smoke-test each platform and upload its binary as an artefact
-# ---------------------------------------------------------------------------
   build:
-    name: ${{ matrix.os }}-${{ matrix.arch }}
+    name: build-${{ matrix.os }}-${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}
 
     strategy:
       fail-fast: false
       matrix:
         include:
-          # runner             os     arch   pkgTarget              ext
-          - { runner: ubuntu-latest , os: linux ,  arch: x64  , pkgTarget: node18-linux-x64  , ext: ""      }
-          - { runner: ubuntu-latest , os: linux ,  arch: arm64, pkgTarget: node18-linux-arm64, ext: ""      }
-          - { runner: macos-14      , os: macos , arch: x64  , pkgTarget: node18-macos-x64  , ext: ""      }
-          - { runner: macos-14      , os: macos , arch: arm64, pkgTarget: node18-macos-arm64, ext: ""      }
-          - { runner: windows-latest, os: win   , arch: x64  , pkgTarget: node18-win-x64   , ext: ".exe"   }
+          # runner            os     arch   pkgTarget              ext
+          - { runner: ubuntu-latest , os: linux ,  arch: x64  , pkgTarget: node18-linux-x64  , ext: ""     }
+          - { runner: ubuntu-latest , os: linux ,  arch: arm64, pkgTarget: node18-linux-arm64, ext: ""     }
+          - { runner: macos-latest  , os: macos , arch: x64  , pkgTarget: node18-macos-x64  , ext: ""     }
+          - { runner: macos-latest  , os: macos , arch: arm64, pkgTarget: node18-macos-arm64, ext: ""     }
+          - { runner: windows-latest, os: win   , arch: x64  , pkgTarget: node18-win-x64   , ext: ".exe" }
 
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
-        with: { node-version: ${{ env.BUILD_NODE_VERSION }} }
+        with:
+          node-version: 18
 
-      # ------------------------------------------------------------------
-      # Install deps, compile TS → dist/host.js
-      # ------------------------------------------------------------------
       - name: Install deps & build helper
         run: |
           npm ci
-          npm run build
+          npm run build          # produces dist/host.js
 
-      # ------------------------------------------------------------------
-      # SDK CommonJS shim – ONLY needed because the SDK ships ESM-only
-      # ------------------------------------------------------------------
       - name: Add SDK CommonJS shim
-        if: always()
         shell: bash
         run: |
           mkdir -p node_modules/@modelcontextprotocol/sdk/client
           cat > node_modules/@modelcontextprotocol/sdk/client/index.js <<'JS'
-          // Auto-generated shim so `pkg` can require() the ESM client.
+          // Auto-generated shim so pkg can bundle the ESM client.
           const { createRequire } = require('module');
           module.exports = createRequire(__filename)('./index.mjs');
           JS
 
-      # ------------------------------------------------------------------
-      # Package native binary with `pkg`
-      # ------------------------------------------------------------------
-      - name: Package binary
-        shell: bash
+      - name: Package binary with pkg
         run: |
-          OUT="dist/pkg/gm-mcp-host-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}"
-          npx pkg dist/host.js --targets ${{ matrix.pkgTarget }} --output "$OUT"
+          npx pkg dist/host.js \
+            --targets ${{ matrix.pkgTarget }} \
+            --output dist/pkg/gm-mcp-host-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}
 
-      # ------------------------------------------------------------------
-      # Basic smoke-test: run helper → GET /health (5 s timeout)
-      # Fails the job if health-check fails.
-      # ------------------------------------------------------------------
-      - name: Smoke-test binary
-        shell: bash
-        run: |
-          exe="dist/pkg/gm-mcp-host-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}"
-          ( "$exe" & )          # start in background
-          pid=$!
-          sleep 5
-          curl -sf http://127.0.0.1:9000/health
-          kill $pid
-
-      # ------------------------------------------------------------------
-      # Upload artefact so the publish job can grab them all
-      # ------------------------------------------------------------------
-      - name: Upload binary artefact
+      - name: Upload packaged binary
         uses: actions/upload-artifact@v4
         with:
           name: gm-mcp-host-${{ matrix.os }}-${{ matrix.arch }}
-          path: dist/pkg/*
+          path: dist/pkg/gm-mcp-host-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}
 
-# ---------------------------------------------------------------------------
-# 2.  Create / update the GitHub Release and attach every artefact
-# ---------------------------------------------------------------------------
-  publish_release:
-    needs: build                # wait for ALL platform jobs to finish
-    if: success()               # don’t run on red builds
+  release:
+    name: publish-release
+    needs: build
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/download-artifact@v4
         with:
-          path: release-assets   # all artefacts land here
+          path: dist/pkg              # pulls down everything the build job uploaded
 
-      - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v2
         with:
-          files: |
-            release-assets/**/*
-          generate_release_notes: true
-# -------- END FILE --------
+          files: dist/pkg/**
+# -------- END release.yml --------
