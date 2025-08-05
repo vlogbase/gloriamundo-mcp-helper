@@ -1,0 +1,70 @@
+name: Build & Release MCP Desktop Helper
+
+on:
+  push:
+    tags: ['v*']        # only run on semver tags like v0.2.45
+
+permissions:
+  contents: write      # for creating the GitHub release
+
+jobs:
+  build:
+    name: build-${{ matrix.os }}-${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+
+    strategy:
+      matrix:
+        include:
+          - { runner: ubuntu-latest , os: linux , arch: x64  , pkgTarget: node18-linux-x64   , ext: ""     }
+          - { runner: ubuntu-latest , os: linux , arch: arm64, pkgTarget: node18-linux-arm64 , ext: ""     }
+          - { runner: macos-latest  , os: macos , arch: x64  , pkgTarget: node18-macos-x64   , ext: ""     }
+          - { runner: macos-latest  , os: macos , arch: arm64, pkgTarget: node18-macos-arm64 , ext: ""     }
+          - { runner: windows-latest, os: win   , arch: x64  , pkgTarget: node18-win-x64    , ext: ".exe" }
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - run: npm ci
+
+      - run: npm run build          # ts → dist/host.js
+
+      - name: Add SDK CommonJS shim
+        shell: bash
+        run: |
+          mkdir -p node_modules/@modelcontextprotocol/sdk/client
+          cat > node_modules/@modelcontextprotocol/sdk/client/index.js <<'JS'
+          // Auto-generated shim so pkg can require() the ESM-only SDK
+          const { createRequire } = require('module');
+          module.exports = createRequire(__filename)('./index.mjs');
+          JS
+
+      - name: Package native binary
+        shell: bash
+        run: |
+          cross-env GM_HELPER_VERSION=${{ github.ref_name }} \
+            npx pkg dist/host.js \
+              --targets ${{ matrix.pkgTarget }} \
+              --output dist/pkg/gm-mcp-host-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gm-mcp-host-${{ matrix.os }}-${{ matrix.arch }}
+          path: dist/pkg/gm-mcp-host-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}
+
+  release:
+    name: publish-release
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist/pkg
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/pkg/**
