@@ -2,7 +2,7 @@ name: Build & Release MCP Desktop Helper
 
 on:
   push:
-    tags: ['v*']        # only run on semver tags like v0.2.45
+    tags: ['v*']        # only run on semver tags like v0.2.x
 
 permissions:
   contents: write      # for creating the GitHub release
@@ -11,7 +11,6 @@ jobs:
   build:
     name: build-${{ matrix.os }}-${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}
-
     strategy:
       matrix:
         include:
@@ -44,11 +43,12 @@ jobs:
 
       - name: Package native binary
         shell: bash
+        env:
+          GM_HELPER_VERSION: ${{ github.ref_name }}
         run: |
-          cross-env GM_HELPER_VERSION=${{ github.ref_name }} \
-            npx pkg dist/host.js \
-              --targets ${{ matrix.pkgTarget }} \
-              --output dist/pkg/gm-mcp-host-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}
+          npx pkg dist/host.js \
+            --targets ${{ matrix.pkgTarget }} \
+            --output dist/pkg/gm-mcp-host-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}
 
       - uses: actions/upload-artifact@v4
         with:
