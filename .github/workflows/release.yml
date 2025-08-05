@@ -35,6 +35,9 @@ jobs:
 
       - run: npm run build          # produces dist/host.js
 
+      - name: Add SDK CommonJS shim
+        run: node scripts/add-sdk-shim.js
+
       # ---- Generate a CJS shim so `pkg` can bundle the ESM client ----
       - name: Add SDK CommonJS shim
         shell: bash                 # Git Bash is present on Windows runners
