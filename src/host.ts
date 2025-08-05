@@ -16,7 +16,12 @@ const sdk = require("./sdk-cjs");
 type Client = InstanceType<typeof sdk.Client>;
 
 import fs from "fs";
-import { getConfigPath, resolveAllowedOrigins, resolveToken } from "./config";
+import {
+  getConfigPath,
+  resolveAllowedOrigins,
+  resolveToken,
+  VERSION as CONFIG_VERSION,
+} from "./config";
 
 // Load environment variables
 config();
@@ -26,10 +31,8 @@ export const PORT = Number(process.env.MCP_HOST_PORT) || 9000;
 const token = resolveToken();
 const allowedOrigins = resolveAllowedOrigins();
 
-const pkg = JSON.parse(
-  fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf-8"),
-);
-export const VERSION = pkg.version;
+// version injected at build time via GM_HELPER_VERSION
+export const VERSION = CONFIG_VERSION;
 
 // Middleware
 const corsOptions = {
