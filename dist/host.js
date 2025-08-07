@@ -8,14 +8,7 @@ const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
 const dotenv_1 = require("dotenv");
 const zod_1 = require("zod");
-const path_1 = __importDefault(require("path"));
-/* ------------------------------------------------------------------------- *
- * NOTE(pkg): the top-level entry of @modelcontextprotocol/sdk is pure ESM
- * and has no "main"/"exports" field that the pkg bundler understands.
- * We therefore point Node at the CommonJS browser-friendly build instead,
- * which lives under sdk/client/.  This lets pkg include it without hacks.
- * ------------------------------------------------------------------------- */
-// pkg bundles relative requires best when we resolve from __dirname
+// Use CommonJS shim so pkg can statically include the SDK
 const sdk = require("./sdk-cjs");
 const fs_1 = __importDefault(require("fs"));
 const config_1 = require("./config");
@@ -25,8 +18,8 @@ const app = (0, express_1.default)();
 exports.PORT = Number(process.env.MCP_HOST_PORT) || 9000;
 const token = (0, config_1.resolveToken)();
 const allowedOrigins = (0, config_1.resolveAllowedOrigins)();
-const pkg = JSON.parse(fs_1.default.readFileSync(path_1.default.join(__dirname, "..", "package.json"), "utf-8"));
-exports.VERSION = pkg.version;
+// version injected at build time via GM_HELPER_VERSION
+exports.VERSION = config_1.VERSION;
 // Middleware
 const corsOptions = {
     origin: (origin, callback) => {

@@ -2,7 +2,9 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 import crypto from "crypto";
-export { VERSION } from "./version";
+
+/** Helper’s semantic version, injected at build time. */
+export const VERSION = process.env.GM_HELPER_VERSION || "0.0.0-dev";
 
 /**
  * Return the platform-specific JSON file that stores the long-lived auth token.

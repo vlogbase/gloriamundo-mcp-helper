@@ -6,13 +6,8 @@
   "bin": "dist/host.js",
   "scripts": {
     "build": "tsc",
-    "package": "pkg dist/host.js --targets node18-linux-x64,node18-linux-arm64,node18-macos-x64,node18-macos-arm64,node18-win-x64 --out-path dist/pkg",
     "start": "node dist/host.js",
-    "dev": "tsx watch src/host.ts",
-    "pkg:all": "npm run build && pkg .",
-    "pkg:linux": "npm run build && pkg . --targets node20-linux-x64 --out-path dist/pkg",
-    "pkg:mac": "npm run build && pkg . --targets node20-macos-x64,node20-macos-arm64 --out-path dist/pkg",
-    "pkg:win": "npm run build && pkg . --targets node20-win-x64 --out-path dist/pkg"
+    "dev": "tsx watch src/host.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.0",
@@ -29,18 +24,5 @@
     "pkg": "^5.8.1",
     "tsx": "^4.7.0",
     "typescript": "^5.4.5"
-  },
-  "pkg": {
-    "targets": [
-      "node20-linux-x64",
-      "node20-macos-x64",
-      "node20-macos-arm64",
-      "node20-win-x64"
-    ],
-    "outputPath": "dist/pkg",
-    "assets": [
-      "package.json"
-    ],
-    "compression": "Brotli"
   }
 }

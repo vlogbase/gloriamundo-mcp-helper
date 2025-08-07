@@ -1,2 +1,3 @@
 "use strict";
-module.exports = require("@modelcontextprotocol/sdk/client/index.js");
+// src/sdk-cjs.ts
+module.exports = require('@modelcontextprotocol/sdk/dist/cjs/client');
