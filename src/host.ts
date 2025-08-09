@@ -21,6 +21,7 @@ config();
 
 const app = express();
 export const PORT = Number(process.env.MCP_HOST_PORT) || 9000;
+const HOST = process.env.MCP_HOST_BIND || "127.0.0.1";
 const token = resolveToken();
 const allowedOrigins = resolveAllowedOrigins();
 
@@ -269,7 +270,7 @@ process.on("SIGINT", async () => {
   process.exit(0);
 });
 
-app.listen(PORT, "0.0.0.0", () => {
+app.listen(PORT, HOST, () => {
   console.log(`GloriaMundo MCP Host listening on http://localhost:${PORT}`);
   console.log(`MCP token (copy into Account → MCP Host Token): ${token}`);
 });

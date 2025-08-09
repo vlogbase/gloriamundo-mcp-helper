@@ -20,6 +20,11 @@ npm start
 
 The server logs the host URL and the generated MCP token on startup.
 
+By default the helper binds to `127.0.0.1` on port `9000`. Advanced users can
+override the bind address by setting `MCP_HOST_BIND=0.0.0.0` (or another
+address) before starting the helper. You can verify it is running by visiting
+[`http://127.0.0.1:9000/health`](http://127.0.0.1:9000/health).
+
 ## Configuration
 
 Environment variables:
@@ -29,6 +34,7 @@ Environment variables:
   persisted to a config file.
 - `MCP_ALLOWED_ORIGINS` – comma-separated list of allowed CORS origins
   (default `https://gloriamundo.com`).
+- `MCP_HOST_BIND` – address to bind to (default `127.0.0.1`).
 
 ### Token storage
 
@@ -41,9 +47,9 @@ The generated token is stored in:
 ## Example
 
 ```bash
-curl http://localhost:9000/health
-curl http://localhost:9000/config/public
-curl -H "Authorization: Bearer <TOKEN>" http://localhost:9000/mcp/tools/<id>
+curl http://127.0.0.1:9000/health
+curl http://127.0.0.1:9000/config/public
+curl -H "Authorization: Bearer <TOKEN>" http://127.0.0.1:9000/mcp/tools/<id>
 ```
 
 ## Building stand-alone binaries
@@ -73,7 +79,7 @@ Binaries will appear under `desktop/host/dist/pkg/`:
 dist\\pkg\\gm-mcp-host-win-x64.exe
 ```
 
-Default port: 9101 (configurable via env). You can validate the build with:
+Default port: 9000 (configurable via env). You can validate the build with:
 
 ```bash
 ../../scripts/self_test_helper.sh
