@@ -16,6 +16,7 @@ const config_1 = require("./config");
 (0, dotenv_1.config)();
 const app = (0, express_1.default)();
 exports.PORT = Number(process.env.MCP_HOST_PORT) || 9000;
+const HOST = process.env.MCP_HOST_BIND || "127.0.0.1";
 const token = (0, config_1.resolveToken)();
 const allowedOrigins = (0, config_1.resolveAllowedOrigins)();
 // version injected at build time via GM_HELPER_VERSION
@@ -114,13 +115,26 @@ app.post("/mcp/connect", async (req, res) => {
                 .status(400)
                 .json({ error: "serverPath and clientId are required" });
         }
+        const existing = mcpClients.get(clientId);
+        if (existing) {
+            try {
+                await existing.close();
+            }
+            catch {
+                /* ignore */
+            }
+            console.log("MCP client replaced:", clientId, serverPath);
+        }
         const client = await initializeMCPClient(serverPath, serverArgs || []);
         mcpClients.set(clientId, client);
+        console.log("MCP client connected:", clientId, serverPath);
         res.json({ success: true, clientId });
     }
     catch (error) {
         console.error("Failed to connect MCP client:", error);
-        res.status(500).json({ error: "Failed to connect MCP client" });
+        res.status(500).json({
+            error: error instanceof Error ? error.message : "Failed to connect MCP client",
+        });
     }
 });
 app.post("/mcp/call/:clientId", async (req, res) => {
@@ -153,7 +167,9 @@ app.post("/mcp/call/:clientId", async (req, res) => {
     }
     catch (error) {
         console.error("MCP call failed:", error);
-        res.status(500).json({ error: "MCP call failed" });
+        res.status(500).json({
+            error: error instanceof Error ? error.message : "MCP call failed",
+        });
     }
 });
 app.get("/mcp/tools/:clientId", async (req, res) => {
@@ -168,7 +184,9 @@ app.get("/mcp/tools/:clientId", async (req, res) => {
     }
     catch (error) {
         console.error("Failed to list tools:", error);
-        res.status(500).json({ error: "Failed to list tools" });
+        res.status(500).json({
+            error: error instanceof Error ? error.message : "Failed to list tools",
+        });
     }
 });
 app.get("/mcp/resources/:clientId", async (req, res) => {
@@ -183,7 +201,9 @@ app.get("/mcp/resources/:clientId", async (req, res) => {
     }
     catch (error) {
         console.error("Failed to list resources:", error);
-        res.status(500).json({ error: "Failed to list resources" });
+        res.status(500).json({
+            error: error instanceof Error ? error.message : "Failed to list resources",
+        });
     }
 });
 app.delete("/mcp/disconnect/:clientId", async (req, res) => {
@@ -195,11 +215,16 @@ app.delete("/mcp/disconnect/:clientId", async (req, res) => {
         }
         await client.close();
         mcpClients.delete(clientId);
+        console.log("MCP client disconnected:", clientId);
         res.json({ success: true });
     }
     catch (error) {
         console.error("Failed to disconnect MCP client:", error);
-        res.status(500).json({ error: "Failed to disconnect MCP client" });
+        res.status(500).json({
+            error: error instanceof Error
+                ? error.message
+                : "Failed to disconnect MCP client",
+        });
     }
 });
 // Graceful shutdown
@@ -216,7 +241,7 @@ process.on("SIGINT", async () => {
     }
     process.exit(0);
 });
-app.listen(exports.PORT, "0.0.0.0", () => {
+app.listen(exports.PORT, HOST, () => {
     console.log(`GloriaMundo MCP Host listening on http://localhost:${exports.PORT}`);
-    console.log(`MCP token (copy into Account → MCP Host Token): ${token}`);
+    console.log(`MCP token (for manual pairing if needed): ${token}`);
 });

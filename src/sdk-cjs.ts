@@ -1,69 +1,71 @@
 /**
- * CommonJS shim for @modelcontextprotocol/sdk client.
- * Locate the CJS build by inspecting the installed package.
+ * Minimal CJS shim for @modelcontextprotocol/sdk.
+ * Works whether package.json is the package root or already in dist/cjs.
+ * Exports: { Client, StdioClientTransport }
  */
-import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-function tryRequire(id: string) {
-  try { return require(id); } catch { return null; }
+function tryReq(id: string): any | null { try { return require(id); } catch { return null; } }
+
+function endsWithDistCjs(p: string): boolean {
+  return /[\\/](dist[\\/])?cjs[\\/]?$/.test(p) || /[\\/]dist[\\/]cjs$/.test(p);
 }
 
-let client: any = null;
+function resolveCjsBase(): string {
+  const pkg = require.resolve('@modelcontextprotocol/sdk/package.json');
+  const dir = dirname(pkg);
+  // If package.json is already under dist/cjs, use that as the base
+  if (dir.endsWith('dist/cjs') || dir.endsWith('dist\\cjs')) return dir;
+  // Otherwise, try common layout: <pkgRoot>/dist/cjs
+  return join(dir, 'dist', 'cjs');
+}
 
-// 1) Try direct CJS exports if the package maps them.
-const directCandidates = [
-  '@modelcontextprotocol/sdk/client',
-  '@modelcontextprotocol/sdk/client/index.js',
+const base = resolveCjsBase();
+
+// Candidates for Client (module may export class directly or under .Client)
+const clientPaths = [
+  join(base, 'client', 'index.js'),
+  join(base, 'client', 'index.cjs'),
+  join(base, 'client.js'),
+  join(base, 'index.js'),
+  join(base, 'index.cjs'),
 ];
-for (const id of directCandidates) {
-  const m = tryRequire(id);
-  if (m) { client = m; break; }
+
+let Client: any = null;
+for (const p of clientPaths) {
+  const mod = tryReq(p);
+  if (!mod) continue;
+  if (mod.Client) { Client = mod.Client; break; }
+  if (typeof mod === 'function') { Client = mod; break; }
 }
 
-// 2) Otherwise, derive the CJS base dir: .../sdk/dist/cjs/
-let cjsBase = '';
-if (!client) {
-  try {
-    const pkgCjs = require.resolve('@modelcontextprotocol/sdk/dist/cjs/package.json');
-    cjsBase = dirname(pkgCjs);
-  } catch {
-    try {
-      const pkgRoot = dirname(require.resolve('@modelcontextprotocol/sdk/package.json'));
-      cjsBase = join(pkgRoot, 'dist', 'cjs');
-    } catch {
-      cjsBase = '';
-    }
-  }
+// Candidates for StdioClientTransport (some builds default-export it)
+const stdioPaths = [
+  join(base, 'client', 'transport', 'stdio.js'),
+  join(base, 'client', 'transport', 'stdio.cjs'),
+  join(base, 'transport', 'stdio.js'),
+  join(base, 'transport', 'stdio.cjs'),
+  join(base, 'client', 'stdio.js'),
+  join(base, 'client', 'stdio.cjs'),
+];
 
-  if (cjsBase) {
-    const pathCandidates = [
-      join(cjsBase, 'client', 'index.cjs'),
-      join(cjsBase, 'client', 'index.js'),
-      join(cjsBase, 'client.cjs'),
-      join(cjsBase, 'client.js'),
-      join(cjsBase, 'index.cjs'),
-      join(cjsBase, 'index.js'),
-    ];
-    for (const p of pathCandidates) {
-      if (existsSync(p)) {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        client = require(p);
-        break;
-      }
-    }
-  }
+let StdioClientTransport: any = null;
+for (const p of stdioPaths) {
+  const mod = tryReq(p);
+  if (!mod) continue;
+  if (mod.StdioClientTransport) { StdioClientTransport = mod.StdioClientTransport; break; }
+  if (typeof mod === 'function') { StdioClientTransport = mod; break; }
 }
 
-// 3) If still not found, throw a detailed error.
-if (!client) {
+if (!Client || !StdioClientTransport) {
   let pkgPath = '';
   try { pkgPath = require.resolve('@modelcontextprotocol/sdk/package.json'); } catch {}
   throw new Error(
-    'Could not load MCP SDK client via CJS.\n' +
-    'Checked direct ids and common dist/cjs paths.\n' +
-    (pkgPath ? `SDK package.json resolved at: ${pkgPath}` : '')
+    'Could not load MCP SDK Client and/or StdioClientTransport.\n' +
+    (pkgPath ? `SDK package.json: ${pkgPath}\n` : '') +
+    `CJS base: ${base}\n` +
+    `Resolved: Client=${!!Client}, StdioClientTransport=${!!StdioClientTransport}`
   );
 }
 
-module.exports = client;
+module.exports = { Client, StdioClientTransport };
