@@ -7,7 +7,8 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/host.js",
-    "dev": "tsx watch src/host.ts"
+    "dev": "tsx watch src/host.ts",
+    "self:test": "bash scripts/self_test_helper.sh"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.0",

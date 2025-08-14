@@ -2,3 +2,4 @@
 # backups/build
 *.bak
 dist/
+node_modules/

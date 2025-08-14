@@ -13,17 +13,17 @@ A desktop application that runs locally to provide the infrastructure for Model 
 ## Quick Start
 
 ```bash
-npm ci
-npm run build
-npm start
+npm ci && npm run build && node dist/host.js
 ```
 
-The server logs the host URL and the generated MCP token on startup.
-
 By default the helper binds to `127.0.0.1` on port `9000`. Advanced users can
-override the bind address by setting `MCP_HOST_BIND=0.0.0.0` (or another
-address) before starting the helper. You can verify it is running by visiting
-[`http://127.0.0.1:9000/health`](http://127.0.0.1:9000/health).
+override the bind address by setting `MCP_HOST_BIND` before starting the
+helper. You can verify it is running by visiting
+[`http://localhost:9000/health`](http://localhost:9000/health).
+
+The GloriaMundo website automatically retrieves the token from
+`/config/public` and pairs with the helper; manual copying of the token is
+rarely needed.
 
 ## Configuration
 
@@ -47,9 +47,9 @@ The generated token is stored in:
 ## Example
 
 ```bash
-curl http://127.0.0.1:9000/health
-curl http://127.0.0.1:9000/config/public
-curl -H "Authorization: Bearer <TOKEN>" http://127.0.0.1:9000/mcp/tools/<id>
+TOKEN=$(curl -s http://localhost:9000/config/public | jq -r .token)
+curl -H "Authorization: Bearer $TOKEN" \
+  http://localhost:9000/mcp/resources/yourClientId
 ```
 
 ## Building stand-alone binaries
@@ -86,3 +86,4 @@ Default port: 9000 (configurable via env). You can validate the build with:
 ```
 
 > Note: binaries are unsigned; macOS users may need to right-click → Open.
+> Windows may show a SmartScreen warning; choose “More info” → “Run anyway”.
