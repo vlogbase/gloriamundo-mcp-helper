@@ -4,6 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.VERSION = exports.PORT = void 0;
+const vault_1 = require("./vault");
 const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
 const dotenv_1 = require("dotenv");
@@ -12,6 +13,7 @@ const zod_1 = require("zod");
 const sdk = require("./sdk-cjs");
 const fs_1 = __importDefault(require("fs"));
 const config_1 = require("./config");
+const catalog_1 = require("./catalog");
 // Load environment variables
 (0, dotenv_1.config)();
 const app = (0, express_1.default)();
@@ -48,10 +50,10 @@ app.use((req, res, next) => {
 // MCP Client management
 const mcpClients = new Map();
 // Initialize MCP client
-async function initializeMCPClient(serverPath, serverArgs = []) {
+async function initializeMCPClient(serverPath, resolvedArgs = [], , resolvedArgs = await (0, vault_1.resolveArgs)(rawArgs)) {
     const transport = new sdk.StdioClientTransport({
         command: serverPath,
-        args: serverArgs,
+        args: resolvedArgs,
     });
     const client = new sdk.Client({
         name: "gm-mcp-host",
@@ -71,6 +73,36 @@ app.get("/health", (req, res) => {
 });
 app.get("/config/public", (req, res) => {
     res.json({ token, allowedOrigins, configPath: (0, config_1.getConfigPath)() });
+});
+// ---- Catalog (read-only) ----
+app.get("/catalog/servers", (_req, res) => {
+    res.json({ servers: catalog_1.servers });
+});
+// ---- Vault (write/delete only; no read endpoint) ----
+app.post("/vault/:name", async (req, res) => {
+    try {
+        const name = req.params.name;
+        const value = (req.body && typeof req.body.value === "string")
+            ? req.body.value
+            : undefined;
+        if (!value)
+            return res.status(400).json({ error: "value is required" });
+        await (0, vault_1.setSecret)(name, value);
+        return res.json({ success: true });
+    }
+    catch (e) {
+        return res.status(500).json({ error: e instanceof Error ? e.message : "Failed to set secret" });
+    }
+});
+app.delete("/vault/:name", async (req, res) => {
+    try {
+        const name = req.params.name;
+        await (0, vault_1.deleteSecret)(name);
+        return res.json({ success: true });
+    }
+    catch (e) {
+        return res.status(500).json({ error: e instanceof Error ? e.message : "Failed to delete secret" });
+    }
 });
 app.get("/v1/fs/list", (req, res) => {
     const dirPath = req.query.path;
@@ -109,34 +141,50 @@ app.get("/v1/fs/get", (req, res) => {
 });
 app.post("/mcp/connect", async (req, res) => {
     try {
-        const { serverPath, serverArgs, clientId } = req.body;
-        if (!serverPath || !clientId) {
-            return res
-                .status(400)
-                .json({ error: "serverPath and clientId are required" });
-        }
-        const existing = mcpClients.get(clientId);
-        if (existing) {
-            try {
-                await existing.close();
-            }
-            catch {
-                /* ignore */
-            }
-            console.log("MCP client replaced:", clientId, serverPath);
-        }
-        const client = await initializeMCPClient(serverPath, serverArgs || []);
-        mcpClients.set(clientId, client);
-        console.log("MCP client connected:", clientId, serverPath);
-        res.json({ success: true, clientId });
+        const resolvedArgs = Array.isArray(serverArgs) ? serverArgs : (serverArgs ? [serverArgs] : []);
     }
-    catch (error) {
-        console.error("Failed to connect MCP client:", error);
-        res.status(500).json({
-            error: error instanceof Error ? error.message : "Failed to connect MCP client",
-        });
+    finally { }
+    req.body;
+    if (!serverPath || !clientId) {
+        return res
+            .status(400)
+            .json({ error: "serverPath and clientId are required" });
     }
+    const existing = mcpClients.get(clientId);
+    if (existing) {
+        try {
+            await existing.close();
+        }
+        catch {
+            /* ignore */
+        }
+        console.log("MCP client replaced:", clientId, serverPath);
+    }
+    // Substitute {{SECRET:NAME}} placeholders in args before spawning
+    let args = resolvedArgs;
+    try {
+        args = await (0, vault_1.resolveArgs)(args);
+    }
+    catch (e) {
+        const msg = e instanceof Error ? e.message : "Failed to resolve args";
+        if (/^Missing secret:/.test(msg)) {
+            return res.status(400).json({ error: msg });
+        }
+        return res.status(500).json({ error: "Failed to resolve args" });
+    }
+    const client = await initializeMCPClient(serverPath, args);
+    mcpClients.set(clientId, client);
+    console.log("MCP client connected:", clientId, serverPath);
+    res.json({ success: true, clientId });
 });
+try { }
+catch (error) {
+    console.error("Failed to connect MCP client:", error);
+    res.status(500).json({
+        error: error instanceof Error ? error.message : "Failed to connect MCP client",
+    });
+}
+;
 app.post("/mcp/call/:clientId", async (req, res) => {
     try {
         const { clientId } = req.params;

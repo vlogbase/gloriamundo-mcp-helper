@@ -1,3 +1,5 @@
+import { servers as CATALOG } from './catalog';
+import { setSecret, deleteSecret, resolveArgs } from './vault';
 import express from "express";
 import type { Request, Response, NextFunction } from "express";
 import cors from "cors";
@@ -15,6 +17,8 @@ import {
   resolveToken,
   VERSION as CONFIG_VERSION,
 } from "./config";
+import { setSecret, deleteSecret, resolveArgs } from "./vault";
+import { servers as CATALOG_SERVERS } from "./catalog";
 
 // Load environment variables
 config();
@@ -65,11 +69,12 @@ const mcpClients = new Map<string, Client>();
 // Initialize MCP client
 async function initializeMCPClient(
   serverPath: string,
-  serverArgs: string[] = [],
+  resolvedArgs: string[] = [],
+  const resolvedArgs = await resolveArgs(rawArgs);
 ): Promise<Client> {
   const transport = new sdk.StdioClientTransport({
     command: serverPath,
-    args: serverArgs,
+    args: resolvedArgs,
   });
 
   const client = new sdk.Client(
@@ -97,6 +102,37 @@ app.get("/health", (req: Request, res: Response) => {
 app.get("/config/public", (req: Request, res: Response) => {
   res.json({ token, allowedOrigins, configPath: getConfigPath() });
 });
+
+// ---- Catalog (read-only) ----
+app.get("/catalog/servers", (_req: Request, res: Response) => {
+  res.json({ servers: CATALOG_SERVERS });
+});
+
+// ---- Vault (write/delete only; no read endpoint) ----
+app.post("/vault/:name", async (req: Request, res: Response) => {
+  try {
+    const name = req.params.name;
+    const value = (req.body && typeof (req.body as any).value === "string")
+      ? (req.body as any).value
+      : undefined;
+    if (!value) return res.status(400).json({ error: "value is required" });
+    await setSecret(name, value);
+    return res.json({ success: true });
+  } catch (e) {
+    return res.status(500).json({ error: e instanceof Error ? e.message : "Failed to set secret" });
+  }
+});
+
+app.delete("/vault/:name", async (req: Request, res: Response) => {
+  try {
+    const name = req.params.name;
+    await deleteSecret(name);
+    return res.json({ success: true });
+  } catch (e) {
+    return res.status(500).json({ error: e instanceof Error ? e.message : "Failed to delete secret" });
+  }
+});
+
 
 app.get("/v1/fs/list", (req: Request, res: Response) => {
   const dirPath = req.query.path;
@@ -135,7 +171,7 @@ app.get("/v1/fs/get", (req: Request, res: Response) => {
 
 app.post("/mcp/connect", async (req: Request, res: Response) => {
   try {
-    const { serverPath, serverArgs, clientId } = req.body;
+    const resolvedArgs = Array.isArray(serverArgs) ? serverArgs : (serverArgs ? [serverArgs] : []);} = req.body;
 
     if (!serverPath || !clientId) {
       return res
@@ -152,7 +188,19 @@ app.post("/mcp/connect", async (req: Request, res: Response) => {
       console.log("MCP client replaced:", clientId, serverPath);
     }
 
-    const client = await initializeMCPClient(serverPath, serverArgs || []);
+    // Substitute {{SECRET:NAME}} placeholders in args before spawning
+    let args = resolvedArgs;
+    try {
+      args = await resolveArgs(args);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Failed to resolve args";
+      if (/^Missing secret:/.test(msg)) {
+        return res.status(400).json({ error: msg });
+      }
+      return res.status(500).json({ error: "Failed to resolve args" });
+    }
+
+    const client = await initializeMCPClient(serverPath, args);
     mcpClients.set(clientId, client);
     console.log("MCP client connected:", clientId, serverPath);
 
