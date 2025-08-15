@@ -67,32 +67,34 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 const mcpClients = new Map<string, Client>();
 
 // Initialize MCP client
-async function initializeMCPClient(
-  serverPath: string,
-  resolvedArgs: string[] = [],
-  const resolvedArgs = await resolveArgs(rawArgs);
-): Promise<Client> {
-  const transport = new sdk.StdioClientTransport({
-    command: serverPath,
-    args: resolvedArgs,
-  });
+  async function initializeMCPClient(
+    serverPath: string,
+    args: string[] = [],
+  ): Promise<Client> {
+    const resolvedArgs = await resolveArgs(args);
 
-  const client = new sdk.Client(
-    {
-      name: "gm-mcp-host",
-      version: "0.1.0",
-    },
-    {
-      capabilities: {
-        tools: {},
-        resources: {},
+    const transport = new sdk.StdioClientTransport({
+      command: serverPath,
+      args: resolvedArgs,
+    });
+
+    const client = new sdk.Client(
+      {
+        name: "gm-mcp-host",
+        version: "0.1.0",
       },
-    },
-  );
+      {
+        capabilities: {
+          tools: {},
+          resources: {},
+        },
+      },
+    );
 
-  await client.connect(transport);
-  return client;
-}
+    await client.connect(transport);
+    return client;
+  }
+
 
 // Routes
 app.get("/health", (req: Request, res: Response) => {
@@ -170,15 +172,33 @@ app.get("/v1/fs/get", (req: Request, res: Response) => {
 });
 
 app.post("/mcp/connect", async (req: Request, res: Response) => {
-  try {
-    const resolvedArgs = Array.isArray(serverArgs) ? serverArgs : (serverArgs ? [serverArgs] : []);} = req.body;
+    try {
+      const { serverPath, serverArgs, clientId } = req.body as {
+        serverPath: string;
+        serverArgs?: string[] | string;
+        clientId: string;
+      };
 
-    if (!serverPath || !clientId) {
-      return res
-        .status(400)
-        .json({ error: "serverPath and clientId are required" });
-    }
-    const existing = mcpClients.get(clientId);
+      if (!serverPath || !clientId) {
+        return res.status(400).json({ error: "serverPath and clientId are required" });
+      }
+
+      const rawArgs = Array.isArray(serverArgs)
+        ? serverArgs
+        : (serverArgs ? [serverArgs] : []);
+
+      let args: string[] = rawArgs;
+      try {
+        args = await resolveArgs(args);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Failed to resolve args";
+        if (/^Missing secret:/.test(msg)):
+          return res.status(400).json({ error: msg });
+        }
+        return res.status(500).json({ error: "Failed to resolve args" });
+      }
+
+const existing = mcpClients.get(clientId);
     if (existing) {
       try {
         await existing.close();
