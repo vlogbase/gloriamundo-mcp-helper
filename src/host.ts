@@ -172,44 +172,22 @@ app.get("/v1/fs/get", (req: Request, res: Response) => {
 });
 
 app.post("/mcp/connect", async (req: Request, res: Response) => {
-    try {
-      const { serverPath, serverArgs, clientId } = req.body as {
-        serverPath: string;
-        serverArgs?: string[] | string;
-        clientId: string;
-      };
+  try {
+    const { serverPath, serverArgs, clientId } = req.body as {
+      serverPath: string;
+      serverArgs?: string[] | string;
+      clientId: string;
+    };
 
-      if (!serverPath || !clientId) {
-        return res.status(400).json({ error: "serverPath and clientId are required" });
-      }
-
-      const rawArgs = Array.isArray(serverArgs)
-        ? serverArgs
-        : (serverArgs ? [serverArgs] : []);
-
-      let args: string[] = rawArgs;
-      try {
-        args = await resolveArgs(args);
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : "Failed to resolve args";
-        if (/^Missing secret:/.test(msg)):
-          return res.status(400).json({ error: msg });
-        }
-        return res.status(500).json({ error: "Failed to resolve args" });
-      }
-
-const existing = mcpClients.get(clientId);
-    if (existing) {
-      try {
-        await existing.close();
-      } catch {
-        /* ignore */
-      }
-      console.log("MCP client replaced:", clientId, serverPath);
+    if (!serverPath || !clientId) {
+      return res.status(400).json({ error: "serverPath and clientId are required" });
     }
 
-    // Substitute {{SECRET:NAME}} placeholders in args before spawning
-    let args = resolvedArgs;
+    const rawArgs = Array.isArray(serverArgs)
+      ? serverArgs
+      : (serverArgs ? [serverArgs] : []);
+
+    let args: string[] = rawArgs;
     try {
       args = await resolveArgs(args);
     } catch (e) {
@@ -220,12 +198,22 @@ const existing = mcpClients.get(clientId);
       return res.status(500).json({ error: "Failed to resolve args" });
     }
 
+    const existing = mcpClients.get(clientId);
+    if (existing) {
+      try { await (existing as any).close?.(); } catch { /* ignore */ }
+    }
+
     const client = await initializeMCPClient(serverPath, args);
     mcpClients.set(clientId, client);
     console.log("MCP client connected:", clientId, serverPath);
 
-    res.json({ success: true, clientId });
+    return res.json({ success: true, clientId });
   } catch (error) {
+    console.error("Failed to connect MCP client:", error);
+    return res.status(500).json({ error: "Failed to connect MCP client" });
+  }
+});
+ catch (error) {
     console.error("Failed to connect MCP client:", error);
     res.status(500).json({
       error: error instanceof Error ? error.message : "Failed to connect MCP client",
