@@ -1,72 +1,122 @@
-import { servers as CATALOG } from './catalog';
-import { setSecret, deleteSecret, resolveArgs } from './vault';
-import express from "express";
-import type { Request, Response, NextFunction } from "express";
-import cors from "cors";
-import { config } from "dotenv";
-import { z } from "zod";
+// tools/rewrite_routes.js
+// Canonical rewrite for route region + initializeMCPClient in src/host.ts
+// - Adds imports for catalog + vault if missing
+// - Replaces the entire routes region (Catalog -> MCP disconnect) with known-good code
+// - Normalizes initializeMCPClient(serverPath, args) to resolve args inside the function
 
-// Use CommonJS shim so pkg can statically include the SDK
-const sdk = require("./sdk-cjs");
-type Client = InstanceType<typeof sdk.Client>;
+const fs = require("fs");
+const FILE = "src/host.ts";
 
-import fs from "fs";
-import {
-  getConfigPath,
-  resolveAllowedOrigins,
-  resolveToken,
-  VERSION as CONFIG_VERSION,
-} from "./config";
+function read() {
+  return fs.readFileSync(FILE, "utf8");
+}
+function write(s) {
+  fs.writeFileSync(FILE, s);
+}
 
-// Load environment variables
-config();
+function hasImport(src, modPath) {
+  const re = new RegExp(String.raw`from\s+['"]${modPath}['"]`);
+  return re.test(src);
+}
 
-const app = express();
-export const PORT = Number(process.env.MCP_HOST_PORT) || 9000;
-const HOST = process.env.MCP_HOST_BIND || "127.0.0.1";
-const token = resolveToken();
-const allowedOrigins = resolveAllowedOrigins();
-
-// version injected at build time via GM_HELPER_VERSION
-export const VERSION = CONFIG_VERSION;
-
-// Middleware
-const corsOptions = {
-  origin: (
-    origin: string | undefined,
-    callback: (err: Error | null, allow?: boolean) => void,
-  ) => {
-    if (
-      !origin ||
-      allowedOrigins.includes(origin) ||
-      /^https?:\/\/localhost(?::\d+)?$/.test(origin) ||
-      /^https?:\/\/127\.0\.0\.1(?::\d+)?$/.test(origin)
-    ) {
-      return callback(null, true);
-    }
-    return callback(new Error("Not allowed by CORS"));
-  },
-};
-
-app.use(cors(corsOptions));
-app.options("*", cors(corsOptions));
-app.use(express.json());
-
-app.use((req: Request, res: Response, next: NextFunction) => {
-  if (req.path === "/health" || req.path === "/config/public") return next();
-  const auth = req.headers["authorization"];
-  if (!auth || !auth.startsWith("Bearer ") || auth.slice(7) !== token) {
-    return res.status(401).json({ error: "Unauthorized" });
+function insertImportIfMissing(src, importLine, modPath) {
+  if (hasImport(src, modPath)) return src;
+  const m = src.match(/^import .*$/m);
+  if (m) {
+    const i = m.index;
+    return src.slice(0, i) + importLine + "\n" + src.slice(i);
   }
-  next();
-});
+  return importLine + "\n" + src;
+}
 
-// MCP Client management
-const mcpClients = new Map<string, Client>();
 
-// Initialize MCP client
-  
-  
+function findBalancedBlock(src, startIdx) {
+  // Start from first '{' after startIdx; return [blockStartBraceIdx, blockEndIdxExclusive]
+  const open = src.indexOf("{", startIdx);
+  if (open < 0) return null;
+  let depth = 0;
+  for (let i = open; i < src.length; i++) {
+    const ch = src[i];
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) {
+        // include following ');' if present
+        let end = i + 1;
+        if (src.slice(end, end + 2) === ");") end += 2;
+        return [open, end];
+      }
+    }
+  }
+  return null; // unbalanced
+}
+
+function replaceFunctionByName(src, fnName, newBody) {
+  // Find "async function <name>(" then replace balanced block
+  const start = src.search(new RegExp(`async\\s+function\\s+${fnName}\\s*\\(`));
+  if (start < 0) return src; // not found; don't throw, just skip
+  const blk = findBalancedBlock(src, start);
+  if (!blk)
+    throw new Error(`Unbalanced function body while replacing ${fnName}`);
+  const [blockStart, blockEndEx] = blk;
+  return src.slice(0, start) + newBody + src.slice(blockEndEx);
+}
+
+function replaceRoutesRegion(src, canonical) {
+  // Boundaries:
+  //   - Start: prefer the "Catalog" comment or the catalog route
+  //   - End:   prefer the "Graceful shutdown" comment or the SIGINT handler
+  let startIdx =
+    src.indexOf("\n  // ---- Catalog (read-only) ----") >= 0
+      ? src.indexOf("\n  // ---- Catalog (read-only) ----")
+      : src.indexOf('\n  app.get("/catalog/servers"');
+
+  if (startIdx < 0) {
+    // Fallback: start at first of vault/fs/mcp routes
+    const candidates = [
+      '\n  app.post("/vault/:name"',
+      '\n  app.get("/v1/fs/list"',
+      '\n  app.post("/mcp/connect"',
+    ]
+      .map((lit) => src.indexOf(lit))
+      .filter((i) => i >= 0);
+    if (!candidates.length) {
+      throw new Error("Could not find start of routes region.");
+    }
+    startIdx = Math.min(...candidates);
+  }
+
+  let endIdx =
+    src.indexOf("\n  // Graceful shutdown") >= 0
+      ? src.indexOf("\n  // Graceful shutdown")
+      : src.indexOf('process.on("SIGINT"');
+
+  if (endIdx < 0) throw new Error("Could not find end of routes region.");
+
+  // Keep a preceding newline at start and preserve end anchor
+  const before = src.slice(0, startIdx);
+  const after = src.slice(endIdx);
+
+  return before + "\n" + canonical.trimEnd() + "\n" + after;
+}
+
+// ---------- load file ----------
+let s = read();
+
+// ---------- ensure imports ----------
+s = insertImportIfMissing(
+  s,
+  'import { servers as CATALOG_SERVERS } from "./catalog";',
+  "./catalog"
+);
+s = insertImportIfMissing(
+  s,
+  'import { setSecret, deleteSecret, resolveArgs } from "./vault";',
+  "./vault"
+);
+
+// ---------- normalize initializeMCPClient ----------
+const initFnCanon = `
   async function initializeMCPClient(
     serverPath: string,
     args: string[] = [],
@@ -94,52 +144,12 @@ const mcpClients = new Map<string, Client>();
     await client.connect(transport);
     return client;
   }
+`;
 
+s = replaceFunctionByName(s, "initializeMCPClient", initFnCanon);
 
-
-
-// Routes
-app.get("/health", (req: Request, res: Response) => {
-  res.json({ ok: true, version: VERSION, uptime: process.uptime() });
-});
-
-app.get("/config/public", (req: Request, res: Response) => {
-  res.json({ token, allowedOrigins, configPath: getConfigPath() });
-});
-
-// ---- Catalog (read-only) ----
-app.get("/catalog/servers", (_req: Request, res: Response) => {
-  res.json({ servers: CATALOG_SERVERS });
-});
-
-// ---- Vault (write/delete only; no read endpoint) ----
-app.post("/vault/:name", async (req: Request, res: Response) => {
-  try {
-    const name = req.params.name;
-    const value = (req.body && typeof (req.body as any).value === "string")
-      ? (req.body as any).value
-      : undefined;
-    if (!value) return res.status(400).json({ error: "value is required" });
-    await setSecret(name, value);
-    return res.json({ success: true });
-  } catch (e) {
-    return res.status(500).json({ error: e instanceof Error ? e.message : "Failed to set secret" });
-  }
-});
-
-app.delete("/vault/:name", async (req: Request, res: Response) => {
-  try {
-    const name = req.params.name;
-    await deleteSecret(name);
-    return res.json({ success: true });
-  } catch (e) {
-    return res.status(500).json({ error: e instanceof Error ? e.message : "Failed to delete secret" });
-  }
-});
-// ---- Filesystem (read-only) ----
-  // ---- Filesystem (read-only) ----
-
-
+// ---------- canonical routes region ----------
+const routesCanon = `
   // ---- Catalog (read-only) ----
   app.get("/catalog/servers", (_req: Request, res: Response) => {
     res.json({ servers: CATALOG_SERVERS });
@@ -366,22 +376,13 @@ app.delete("/vault/:name", async (req: Request, res: Response) => {
       });
     }
   });
-process.on("SIGINT", async () => {
-  console.log("Shutting down MCP host...");
+`;
 
-  for (const [clientId, client] of mcpClients) {
-    try {
-      await client.close();
-      console.log(`Closed MCP client: ${clientId}`);
-    } catch (error) {
-      console.error(`Error closing MCP client ${clientId}:`, error);
-    }
-  }
+s = replaceRoutesRegion(s, routesCanon);
 
-  process.exit(0);
-});
+// Minor cleanup: if any accidental "const const" slipped in previously
+s = s.replace(/\bconst\s+const\s+/g, "const ");
 
-app.listen(PORT, HOST, () => {
-  console.log(`GloriaMundo MCP Host listening on http://localhost:${PORT}`);
-  console.log(`MCP token (for manual pairing if needed): ${token}`);
-});
+// Write back
+write(s);
+console.log("✅ Rewrote imports, initializeMCPClient, and the routes region.");
