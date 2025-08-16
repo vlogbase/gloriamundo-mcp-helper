@@ -109,7 +109,7 @@ app.get("/config/public", (req: Request, res: Response) => {
 
 // ---- Catalog (read-only) ----
 app.get("/catalog/servers", (_req: Request, res: Response) => {
-  res.json({ servers: CATALOG_SERVERS });
+  res.json({ servers: CATALOG });
 });
 
 // ---- Vault (write/delete only; no read endpoint) ----
@@ -142,7 +142,7 @@ app.delete("/vault/:name", async (req: Request, res: Response) => {
 
   // ---- Catalog (read-only) ----
   app.get("/catalog/servers", (_req: Request, res: Response) => {
-    res.json({ servers: CATALOG_SERVERS });
+    res.json({ servers: CATALOG });
   });
 
   // ---- Vault (write/delete only; no read endpoint) ----
