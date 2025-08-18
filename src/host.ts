@@ -1,3 +1,4 @@
+import { installOps } from "./ops";
 import { servers as CATALOG } from './catalog';
 import { setSecret, deleteSecret, resolveArgs } from './vault';
 import express from "express";
@@ -381,6 +382,8 @@ process.on("SIGINT", async () => {
   process.exit(0);
 });
 
+  // Mount production ops endpoints
+  installOps(app);
 app.listen(PORT, HOST, () => {
   console.log(`GloriaMundo MCP Host listening on http://localhost:${PORT}`);
   console.log(`MCP token (for manual pairing if needed): ${token}`);

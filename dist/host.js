@@ -4,6 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.VERSION = exports.PORT = void 0;
+const ops_1 = require("./ops");
 const catalog_1 = require("./catalog");
 const vault_1 = require("./vault");
 const express_1 = __importDefault(require("express"));
@@ -336,6 +337,8 @@ process.on("SIGINT", async () => {
     }
     process.exit(0);
 });
+// Mount production ops endpoints
+(0, ops_1.installOps)(app);
 app.listen(exports.PORT, HOST, () => {
     console.log(`GloriaMundo MCP Host listening on http://localhost:${exports.PORT}`);
     console.log(`MCP token (for manual pairing if needed): ${token}`);

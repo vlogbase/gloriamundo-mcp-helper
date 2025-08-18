@@ -87,3 +87,17 @@ Default port: 9000 (configurable via env). You can validate the build with:
 
 > Note: binaries are unsigned; macOS users may need to right-click → Open.
 > Windows may show a SmartScreen warning; choose “More info” → “Run anyway”.
+
+## Operations API (technical preview)
+
+- `GET /healthz` – health info  
+- `GET /catalog/servers` – lists helper-provided local servers (e.g., `vault`, `fs`)  
+- **Vault (auth required)**  
+  - `POST /vault/:name` `{ "value": "secret" }` – create/update secret  
+  - `DELETE /vault/:name` – delete secret  
+  - `GET /vault/:name` – read secret (diagnostics)
+- **Filesystem (read-only)**  
+  - `GET /fs/list?path=.` – list directory under `MCP_FS_ROOT` (default: cwd)  
+  - `GET /fs/read?path=path/to/file` – base64 contents (≤ `MCP_FS_MAX_READ_BYTES`, default 1MB)
+
+Auth header: `Authorization: Bearer <MCP_HOST_TOKEN>` (or `X-Api-Key`)
