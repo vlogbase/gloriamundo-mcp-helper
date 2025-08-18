@@ -4,16 +4,15 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.VERSION = exports.PORT = void 0;
+const catalog_1 = require("./catalog");
 const vault_1 = require("./vault");
 const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
 const dotenv_1 = require("dotenv");
-const zod_1 = require("zod");
 // Use CommonJS shim so pkg can statically include the SDK
 const sdk = require("./sdk-cjs");
 const fs_1 = __importDefault(require("fs"));
 const config_1 = require("./config");
-const catalog_1 = require("./catalog");
 // Load environment variables
 (0, dotenv_1.config)();
 const app = (0, express_1.default)();
@@ -50,7 +49,8 @@ app.use((req, res, next) => {
 // MCP Client management
 const mcpClients = new Map();
 // Initialize MCP client
-async function initializeMCPClient(serverPath, resolvedArgs = [], , resolvedArgs = await (0, vault_1.resolveArgs)(rawArgs)) {
+async function initializeMCPClient(serverPath, args = []) {
+    const resolvedArgs = await (0, vault_1.resolveArgs)(args);
     const transport = new sdk.StdioClientTransport({
         command: serverPath,
         args: resolvedArgs,
@@ -104,10 +104,49 @@ app.delete("/vault/:name", async (req, res) => {
         return res.status(500).json({ error: e instanceof Error ? e.message : "Failed to delete secret" });
     }
 });
+// ---- Filesystem (read-only) ----
+// ---- Filesystem (read-only) ----
+// ---- Catalog (read-only) ----
+app.get("/catalog/servers", (_req, res) => {
+    res.json({ servers: catalog_1.servers });
+});
+// ---- Vault (write/delete only; no read endpoint) ----
+app.post("/vault/:name", async (req, res) => {
+    try {
+        const name = req.params.name;
+        const value = (req.body && typeof req.body.value === "string")
+            ? req.body.value
+            : undefined;
+        if (!value)
+            return res.status(400).json({ error: "value is required" });
+        await (0, vault_1.setSecret)(name, value);
+        return res.json({ success: true });
+    }
+    catch (e) {
+        return res.status(500).json({
+            error: e instanceof Error ? e.message : "Failed to set secret",
+        });
+    }
+});
+app.delete("/vault/:name", async (req, res) => {
+    try {
+        const name = req.params.name;
+        await (0, vault_1.deleteSecret)(name);
+        return res.json({ success: true });
+    }
+    catch (e) {
+        return res.status(500).json({
+            error: e instanceof Error ? e.message : "Failed to delete secret",
+        });
+    }
+});
+// ---- Filesystem (read-only) ----
 app.get("/v1/fs/list", (req, res) => {
     const dirPath = req.query.path;
     if (typeof dirPath !== "string") {
-        return res.status(400).json({ error: "path query parameter is required" });
+        return res
+            .status(400)
+            .json({ error: "path query parameter is required" });
     }
     try {
         const entries = fs_1.default
@@ -122,7 +161,9 @@ app.get("/v1/fs/list", (req, res) => {
 app.get("/v1/fs/get", (req, res) => {
     const filePath = req.query.path;
     if (typeof filePath !== "string") {
-        return res.status(400).json({ error: "path query parameter is required" });
+        return res
+            .status(400)
+            .json({ error: "path query parameter is required" });
     }
     try {
         const stat = fs_1.default.statSync(filePath);
@@ -139,52 +180,52 @@ app.get("/v1/fs/get", (req, res) => {
         res.status(400).json({ error: "Failed to read file" });
     }
 });
+// ---- MCP (connect/call/list/disconnect) ----
 app.post("/mcp/connect", async (req, res) => {
     try {
-        const resolvedArgs = Array.isArray(serverArgs) ? serverArgs : (serverArgs ? [serverArgs] : []);
-    }
-    finally { }
-    req.body;
-    if (!serverPath || !clientId) {
-        return res
-            .status(400)
-            .json({ error: "serverPath and clientId are required" });
-    }
-    const existing = mcpClients.get(clientId);
-    if (existing) {
+        const { serverPath, serverArgs, clientId } = req.body;
+        if (!serverPath || !clientId) {
+            return res
+                .status(400)
+                .json({ error: "serverPath and clientId are required" });
+        }
+        const rawArgs = Array.isArray(serverArgs)
+            ? serverArgs
+            : serverArgs
+                ? [serverArgs]
+                : [];
+        let args = rawArgs;
         try {
-            await existing.close();
+            args = await (0, vault_1.resolveArgs)(args);
         }
-        catch {
-            /* ignore */
+        catch (e) {
+            const msg = e instanceof Error ? e.message : "Failed to resolve args";
+            if (/^Missing secret:/.test(msg)) {
+                return res.status(400).json({ error: msg });
+            }
+            return res.status(500).json({ error: "Failed to resolve args" });
         }
-        console.log("MCP client replaced:", clientId, serverPath);
-    }
-    // Substitute {{SECRET:NAME}} placeholders in args before spawning
-    let args = resolvedArgs;
-    try {
-        args = await (0, vault_1.resolveArgs)(args);
-    }
-    catch (e) {
-        const msg = e instanceof Error ? e.message : "Failed to resolve args";
-        if (/^Missing secret:/.test(msg)) {
-            return res.status(400).json({ error: msg });
+        const existing = mcpClients.get(clientId);
+        if (existing) {
+            try {
+                await existing.close?.();
+            }
+            catch {
+                /* ignore */
+            }
         }
-        return res.status(500).json({ error: "Failed to resolve args" });
+        const client = await initializeMCPClient(serverPath, args);
+        mcpClients.set(clientId, client);
+        console.log("MCP client connected:", clientId, serverPath);
+        return res.json({ success: true, clientId });
     }
-    const client = await initializeMCPClient(serverPath, args);
-    mcpClients.set(clientId, client);
-    console.log("MCP client connected:", clientId, serverPath);
-    res.json({ success: true, clientId });
+    catch (error) {
+        console.error("Failed to connect MCP client:", error);
+        return res
+            .status(500)
+            .json({ error: "Failed to connect MCP client" });
+    }
 });
-try { }
-catch (error) {
-    console.error("Failed to connect MCP client:", error);
-    res.status(500).json({
-        error: error instanceof Error ? error.message : "Failed to connect MCP client",
-    });
-}
-;
 app.post("/mcp/call/:clientId", async (req, res) => {
     try {
         const { clientId } = req.params;
@@ -193,24 +234,20 @@ app.post("/mcp/call/:clientId", async (req, res) => {
         if (!client) {
             return res.status(404).json({ error: "MCP client not found" });
         }
-        // Version-agnostic timeout wrapper. Some SDK versions don't accept an options arg.
-        const withTimeout = (p, ms) => new Promise((resolve, reject) => {
-            const id = setTimeout(() => {
-                reject(new Error(`MCP request timed out after ${ms}ms`));
-            }, ms);
-            p.then((val) => {
-                clearTimeout(id);
-                resolve(val);
-            }, (err) => {
-                clearTimeout(id);
-                reject(err);
+        // Minimal compatibility across SDK variants
+        let result;
+        if (typeof client.callTool === "function") {
+            result = await client.callTool({
+                name: method,
+                arguments: params,
             });
-        });
-        // Provide a permissive schema: any object shape is accepted.
-        const resultSchema = zod_1.z.object({}).passthrough();
-        // New call: request + schema (+ optional options if your SDK supports them).
-        // If your SDK version doesn't take a third argument, remove the options object.
-        const result = await withTimeout(client.request({ method, params }, resultSchema), 30000);
+        }
+        else if (typeof client.performTool === "function") {
+            result = await client.performTool(method, params);
+        }
+        else {
+            throw new Error("MCP SDK: no tool call method");
+        }
         res.json({ success: true, result });
     }
     catch (error) {
@@ -227,7 +264,10 @@ app.get("/mcp/tools/:clientId", async (req, res) => {
         if (!client) {
             return res.status(404).json({ error: "MCP client not found" });
         }
-        const tools = await client.listTools();
+        let tools = [];
+        if (typeof client.listTools === "function") {
+            tools = await client.listTools();
+        }
         res.json({ success: true, tools });
     }
     catch (error) {
@@ -244,7 +284,10 @@ app.get("/mcp/resources/:clientId", async (req, res) => {
         if (!client) {
             return res.status(404).json({ error: "MCP client not found" });
         }
-        const resources = await client.listResources();
+        let resources = [];
+        if (typeof client.listResources === "function") {
+            resources = await client.listResources();
+        }
         res.json({ success: true, resources });
     }
     catch (error) {
@@ -261,7 +304,12 @@ app.delete("/mcp/disconnect/:clientId", async (req, res) => {
         if (!client) {
             return res.status(404).json({ error: "MCP client not found" });
         }
-        await client.close();
+        try {
+            await client.close?.();
+        }
+        catch {
+            /* ignore */
+        }
         mcpClients.delete(clientId);
         console.log("MCP client disconnected:", clientId);
         res.json({ success: true });
@@ -275,7 +323,6 @@ app.delete("/mcp/disconnect/:clientId", async (req, res) => {
         });
     }
 });
-// Graceful shutdown
 process.on("SIGINT", async () => {
     console.log("Shutting down MCP host...");
     for (const [clientId, client] of mcpClients) {

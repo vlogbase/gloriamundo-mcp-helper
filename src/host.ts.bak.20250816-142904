@@ -1,0 +1,386 @@
+import { servers as CATALOG } from './catalog';
+import { setSecret, deleteSecret, resolveArgs } from './vault';
+import express from "express";
+import type { Request, Response, NextFunction } from "express";
+import cors from "cors";
+import { config } from "dotenv";
+import { z } from "zod";
+
+// Use CommonJS shim so pkg can statically include the SDK
+const sdk = require("./sdk-cjs");
+type Client = InstanceType<typeof sdk.Client>;
+
+import fs from "fs";
+import {
+  getConfigPath,
+  resolveAllowedOrigins,
+  resolveToken,
+  VERSION as CONFIG_VERSION,
+} from "./config";
+import { setSecret, deleteSecret, resolveArgs } from "./vault";
+import { servers as CATALOG_SERVERS } from "./catalog";
+
+// Load environment variables
+config();
+
+const app = express();
+export const PORT = Number(process.env.MCP_HOST_PORT) || 9000;
+const HOST = process.env.MCP_HOST_BIND || "127.0.0.1";
+const token = resolveToken();
+const allowedOrigins = resolveAllowedOrigins();
+
+// version injected at build time via GM_HELPER_VERSION
+export const VERSION = CONFIG_VERSION;
+
+// Middleware
+const corsOptions = {
+  origin: (
+    origin: string | undefined,
+    callback: (err: Error | null, allow?: boolean) => void,
+  ) => {
+    if (
+      !origin ||
+      allowedOrigins.includes(origin) ||
+      /^https?:\/\/localhost(?::\d+)?$/.test(origin) ||
+      /^https?:\/\/127\.0\.0\.1(?::\d+)?$/.test(origin)
+    ) {
+      return callback(null, true);
+    }
+    return callback(new Error("Not allowed by CORS"));
+  },
+};
+
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
+app.use(express.json());
+
+app.use((req: Request, res: Response, next: NextFunction) => {
+  if (req.path === "/health" || req.path === "/config/public") return next();
+  const auth = req.headers["authorization"];
+  if (!auth || !auth.startsWith("Bearer ") || auth.slice(7) !== token) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  next();
+});
+
+// MCP Client management
+const mcpClients = new Map<string, Client>();
+
+// Initialize MCP client
+  
+  async function initializeMCPClient(
+    serverPath: string,
+    args: string[] = [],
+  ): Promise<Client> {
+    const resolvedArgs = await resolveArgs(args);
+
+    const transport = new sdk.StdioClientTransport({
+      command: serverPath,
+      args: resolvedArgs,
+    });
+
+    const client = new sdk.Client(
+      {
+        name: "gm-mcp-host",
+        version: "0.1.0",
+      },
+      {
+        capabilities: {
+          tools: {},
+          resources: {},
+        },
+      },
+    );
+
+    await client.connect(transport);
+    return client;
+  }
+
+
+
+// Routes
+app.get("/health", (req: Request, res: Response) => {
+  res.json({ ok: true, version: VERSION, uptime: process.uptime() });
+});
+
+app.get("/config/public", (req: Request, res: Response) => {
+  res.json({ token, allowedOrigins, configPath: getConfigPath() });
+});
+
+// ---- Catalog (read-only) ----
+app.get("/catalog/servers", (_req: Request, res: Response) => {
+  res.json({ servers: CATALOG_SERVERS });
+});
+
+// ---- Vault (write/delete only; no read endpoint) ----
+app.post("/vault/:name", async (req: Request, res: Response) => {
+  try {
+    const name = req.params.name;
+    const value = (req.body && typeof (req.body as any).value === "string")
+      ? (req.body as any).value
+      : undefined;
+    if (!value) return res.status(400).json({ error: "value is required" });
+    await setSecret(name, value);
+    return res.json({ success: true });
+  } catch (e) {
+    return res.status(500).json({ error: e instanceof Error ? e.message : "Failed to set secret" });
+  }
+});
+
+app.delete("/vault/:name", async (req: Request, res: Response) => {
+  try {
+    const name = req.params.name;
+    await deleteSecret(name);
+    return res.json({ success: true });
+  } catch (e) {
+    return res.status(500).json({ error: e instanceof Error ? e.message : "Failed to delete secret" });
+  }
+});
+// ---- Filesystem (read-only) ----
+  // ---- Filesystem (read-only) ----
+
+  // ---- Catalog (read-only) ----
+  app.get("/catalog/servers", (_req: Request, res: Response) => {
+    res.json({ servers: CATALOG_SERVERS });
+  });
+
+  // ---- Vault (write/delete only; no read endpoint) ----
+  app.post("/vault/:name", async (req: Request, res: Response) => {
+    try {
+      const name = req.params.name;
+      const value =
+        (req.body && typeof (req.body as any).value === "string")
+          ? (req.body as any).value
+          : undefined;
+      if (!value) return res.status(400).json({ error: "value is required" });
+      await setSecret(name, value);
+      return res.json({ success: true });
+    } catch (e) {
+      return res.status(500).json({
+        error: e instanceof Error ? e.message : "Failed to set secret",
+      });
+    }
+  });
+
+  app.delete("/vault/:name", async (req: Request, res: Response) => {
+    try {
+      const name = req.params.name;
+      await deleteSecret(name);
+      return res.json({ success: true });
+    } catch (e) {
+      return res.status(500).json({
+        error: e instanceof Error ? e.message : "Failed to delete secret",
+      });
+    }
+  });
+
+  // ---- Filesystem (read-only) ----
+  app.get("/v1/fs/list", (req: Request, res: Response) => {
+    const dirPath = req.query.path;
+    if (typeof dirPath !== "string") {
+      return res
+        .status(400)
+        .json({ error: "path query parameter is required" });
+    }
+    try {
+      const entries = fs
+        .readdirSync(dirPath, { withFileTypes: true })
+        .map((entry) => ({ name: entry.name, isDir: entry.isDirectory() }));
+      res.json(entries);
+    } catch {
+      res.status(400).json({ error: "Failed to read directory" });
+    }
+  });
+
+  app.get("/v1/fs/get", (req: Request, res: Response) => {
+    const filePath = req.query.path;
+    if (typeof filePath !== "string") {
+      return res
+        .status(400)
+        .json({ error: "path query parameter is required" });
+    }
+    try {
+      const stat = fs.statSync(filePath);
+      if (stat.isDirectory()) {
+        return res.status(400).json({ error: "Path is a directory" });
+      }
+      if (stat.size > 128 * 1024) {
+        return res.status(400).json({ error: "File too large" });
+      }
+      const content = fs.readFileSync(filePath, "utf-8");
+      res.type("text/plain").send(content);
+    } catch {
+      res.status(400).json({ error: "Failed to read file" });
+    }
+  });
+
+  // ---- MCP (connect/call/list/disconnect) ----
+  app.post("/mcp/connect", async (req: Request, res: Response) => {
+    try {
+      const { serverPath, serverArgs, clientId } = req.body as {
+        serverPath: string;
+        serverArgs?: string[] | string;
+        clientId: string;
+      };
+
+      if (!serverPath || !clientId) {
+        return res
+          .status(400)
+          .json({ error: "serverPath and clientId are required" });
+      }
+
+      const rawArgs = Array.isArray(serverArgs)
+        ? serverArgs
+        : serverArgs
+        ? [serverArgs]
+        : [];
+
+      let args: string[] = rawArgs;
+      try {
+        args = await resolveArgs(args);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Failed to resolve args";
+        if (/^Missing secret:/.test(msg)) {
+          return res.status(400).json({ error: msg });
+        }
+        return res.status(500).json({ error: "Failed to resolve args" });
+      }
+
+      const existing = mcpClients.get(clientId);
+      if (existing) {
+        try {
+          await (existing as any).close?.();
+        } catch {
+          /* ignore */
+        }
+      }
+
+      const client = await initializeMCPClient(serverPath, args);
+      mcpClients.set(clientId, client);
+      console.log("MCP client connected:", clientId, serverPath);
+      return res.json({ success: true, clientId });
+    } catch (error) {
+      console.error("Failed to connect MCP client:", error);
+      return res
+        .status(500)
+        .json({ error: "Failed to connect MCP client" });
+    }
+  });
+
+  app.post("/mcp/call/:clientId", async (req: Request, res: Response) => {
+    try {
+      const { clientId } = req.params as { clientId: string };
+      const { method, params } = req.body as { method: string; params?: any };
+
+      const client = mcpClients.get(clientId);
+      if (!client) {
+        return res.status(404).json({ error: "MCP client not found" });
+      }
+
+      // Minimal compatibility across SDK variants
+      let result: any;
+      if (typeof (client as any).callTool === "function") {
+        result = await (client as any).callTool({
+          name: method,
+          arguments: params,
+        });
+      } else if (typeof (client as any).performTool === "function") {
+        result = await (client as any).performTool(method, params);
+      } else {
+        throw new Error("MCP SDK: no tool call method");
+      }
+
+      res.json({ success: true, result });
+    } catch (error) {
+      console.error("MCP call failed:", error);
+      res.status(500).json({
+        error: error instanceof Error ? error.message : "MCP call failed",
+      });
+    }
+  });
+
+  app.get("/mcp/tools/:clientId", async (req: Request, res: Response) => {
+    try {
+      const { clientId } = req.params as { clientId: string };
+      const client = mcpClients.get(clientId);
+      if (!client) {
+        return res.status(404).json({ error: "MCP client not found" });
+      }
+      let tools: any = [];
+      if (typeof (client as any).listTools === "function") {
+        tools = await (client as any).listTools();
+      }
+      res.json({ success: true, tools });
+    } catch (error) {
+      console.error("Failed to list tools:", error);
+      res.status(500).json({
+        error: error instanceof Error ? error.message : "Failed to list tools",
+      });
+    }
+  });
+
+  app.get("/mcp/resources/:clientId", async (req: Request, res: Response) => {
+    try {
+      const { clientId } = req.params as { clientId: string };
+      const client = mcpClients.get(clientId);
+      if (!client) {
+        return res.status(404).json({ error: "MCP client not found" });
+      }
+      let resources: any = [];
+      if (typeof (client as any).listResources === "function") {
+        resources = await (client as any).listResources();
+      }
+      res.json({ success: true, resources });
+    } catch (error) {
+      console.error("Failed to list resources:", error);
+      res.status(500).json({
+        error:
+          error instanceof Error ? error.message : "Failed to list resources",
+      });
+    }
+  });
+
+  app.delete("/mcp/disconnect/:clientId", async (req: Request, res: Response) => {
+    try {
+      const { clientId } = req.params as { clientId: string };
+      const client = mcpClients.get(clientId);
+      if (!client) {
+        return res.status(404).json({ error: "MCP client not found" });
+      }
+      try {
+        await (client as any).close?.();
+      } catch {
+        /* ignore */
+      }
+      mcpClients.delete(clientId);
+      console.log("MCP client disconnected:", clientId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to disconnect MCP client:", error);
+      res.status(500).json({
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to disconnect MCP client",
+      });
+    }
+  });
+process.on("SIGINT", async () => {
+  console.log("Shutting down MCP host...");
+
+  for (const [clientId, client] of mcpClients) {
+    try {
+      await client.close();
+      console.log(`Closed MCP client: ${clientId}`);
+    } catch (error) {
+      console.error(`Error closing MCP client ${clientId}:`, error);
+    }
+  }
+
+  process.exit(0);
+});
+
+app.listen(PORT, HOST, () => {
+  console.log(`GloriaMundo MCP Host listening on http://localhost:${PORT}`);
+  console.log(`MCP token (for manual pairing if needed): ${token}`);
+});
