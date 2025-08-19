@@ -1,6 +1,6 @@
 {
   "name": "gm-mcp-host",
-  "version": "0.2.65",
+  "version": "0.3.0",
   "description": "GloriaMundo MCP Host",
   "main": "dist/host.js",
   "bin": "dist/host.js",
