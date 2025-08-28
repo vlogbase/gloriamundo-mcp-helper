@@ -1,0 +1,37 @@
+# Build & deps
+node_modules/
+dist/
+build/
+.cache/
+.venv/
+venv/
+__pycache__/
+*.min.js
+*.min.css
+
+# Large/static assets
+static/**/*.png
+static/**/*.jpg
+static/**/*.jpeg
+static/**/*.gif
+static/**/*.webp
+static/**/*.mp4
+extracted_assets/
+temp_icons/
+
+# Replit / local-only
+.replit
+.replit.nix
+.replit.workflow
+replit.nix
+
+# Secrets & environment
+.env
+.env.*.local
+*.key
+*.pem
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.vscode/
